@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eMoney Seller - NFC</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 400px;
+      margin: 40px auto;
+      text-align: center;
+    }
+    button, input[type="number"], input[type="text"] {
+      padding: 10px;
+      margin: 10px 0;
+      font-size: 16px;
+      width: 80%;
+      max-width: 300px;
+    }
+    #output, #formTransaksi, #infoToko, #initToko {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+    }
+    #formTransaksi, #infoToko, #mainInterface {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>e-Money Seller NFC</h2>
+
+  <!-- FORM INPUT TOKO -->
+  <div id="initToko">
+    <p>Masukkan nama toko kamu:</p>
+    <input type="text" id="namaTokoInput" placeholder="Contoh: Kopi Biru">
+    <br>
+    <button id="masukBtn">Masuk</button>
+  </div>
+
+  <!-- MENU UTAMA -->
+  <div id="mainInterface">
+    <button id="cekSaldoBtn">?? Cek Saldo</button><br>
+    <button id="transaksiBtn">?? Transaksi</button><br>
+    <button id="infoBtn">?? Informasi Toko</button>
+  </div>
+
+  <!-- OUTPUT -->
+  <div id="output">Silakan tempelkan kartu NFC.</div>
+
+  <!-- FORM TRANSAKSI -->
+  <div id="formTransaksi">
+    <p>Masukkan harga transaksi:</p>
+    <input type="number" id="hargaInput" placeholder="Contoh: 10000" min="1">
+    <br>
+    <button id="prosesBtn">?? Proses Transaksi</button>
+  </div>
+
+  <!-- INFORMASI TOKO -->
+  <div id="infoToko">
+    <p><strong>Nama Toko:</strong> <span id="namaTokoLabel"></span></p>
+    <p><strong>Saldo Toko:</strong> Rp<span id="saldoTokoLabel"></span></p>
+  </div>
+
+  <script>
+    let currentData = null;
+    let namaToko = "";
+    let saldoToko = 0;
+
+    const output = document.getElementById("output");
+    const formTransaksi = document.getElementById("formTransaksi");
+    const hargaInput = document.getElementById("hargaInput");
+    const infoTokoDiv = document.getElementById("infoToko");
+
+    document.getElementById("masukBtn").addEventListener("click", () => {
+      const input = document.getElementById("namaTokoInput").value.trim();
+      if (!input) {
+        alert("Nama toko wajib diisi.");
+        return;
+      }
+      namaToko = input;
+      document.getElementById("initToko").style.display = "none";
+      document.getElementById("mainInterface").style.display = "block";
+      output.innerText = "Selamat datang di eMoney Seller.";
+    });
+
+    async function scanNFC(callback) {
+      try {
+        const ndef = new NDEFReader();
+        await ndef.scan();
+        output.innerText = "Tempelkan kartu pembeli...";
+
+        ndef.onreading = event => {
+          const decoder = new TextDecoder();
+          for (const record of event.message.records) {
+            const text = decoder.decode(record.data);
+            try {
+              currentData = JSON.parse(text);
+              callback(currentData);
+            } catch {
+              output.innerText = "? Data di kartu tidak valid.";
+            }
+          }
+        };
+      } catch (err) {
+        output.innerText = "?? Gagal membaca NFC: " + err;
+      }
+    }
+
+    async function writeToNFC(data, afterWriteCallback) {
+      try {
+        const ndef = new NDEFReader();
+        await ndef.write(JSON.stringify(data));
+        afterWriteCallback();
+      } catch (err) {
+        output.innerText = "? Gagal menulis ke kartu: " + err;
+      }
+    }
+
+    document.getElementById("cekSaldoBtn").addEventListener("click", () => {
+      formTransaksi.style.display = "none";
+      infoTokoDiv.style.display = "none";
+
+      scanNFC(data => {
+        output.innerHTML = `
+          ?? Nama: <strong>${data.name}</strong><br>
+          ?? Saldo: <strong>Rp${data.balance.toLocaleString()}</strong>
+        `;
+      });
+    });
+
+    document.getElementById("transaksiBtn").addEventListener("click", () => {
+      formTransaksi.style.display = "block";
+      infoTokoDiv.style.display = "none";
+      output.innerText = "Masukkan harga, lalu tekan proses.";
+    });
+
+    document.getElementById("prosesBtn").addEventListener("click", () => {
+      const harga = parseInt(hargaInput.value);
+      if (isNaN(harga) || harga <= 0) {
+        alert("Masukkan harga yang valid.");
+        return;
+      }
+
+      output.innerText = "Tempelkan kartu pembeli untuk proses transaksi...";
+      scanNFC(data => {
+        if (data.balance < harga) {
+          output.innerText = "? Saldo pembeli tidak cukup.";
+          return;
+        }
+
+        data.balance -= harga;
+        writeToNFC(data, () => {
+          saldoToko += harga;
+          output.innerHTML = `
+            ? Transaksi sukses!<br>
+            ?? Pembeli: <strong>${data.name}</strong><br>
+            ?? Saldo tersisa: Rp${data.balance.toLocaleString()}<br>
+            ?? Saldo toko bertambah: Rp${harga.toLocaleString()}
+          `;
+          hargaInput.value = "";
+          formTransaksi.style.display = "none";
+        });
+      });
+    });
+
+    document.getElementById("infoBtn").addEventListener("click", () => {
+      infoTokoDiv.style.display = "block";
+      formTransaksi.style.display = "none";
+      document.getElementById("namaTokoLabel").innerText = namaToko;
+      document.getElementById("saldoTokoLabel").innerText = saldoToko.toLocaleString();
+    });
+  </script>
+
+</body>
+</html>
