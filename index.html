@@ -1,212 +1,150 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ink Pay</title>
+  <meta charset="UTF-8" />
+  <title>Simulasi E-Money NFC</title>
   <style>
-    body {
-      font-family: sans-serif;
-      max-width: 400px;
-      margin: 40px auto;
-      text-align: center;
-    }
-    button, input[type="number"], input[type="text"], input[type="password"] {
-      padding: 10px;
-      margin: 10px 0;
-      font-size: 16px;
-      width: 80%;
-      max-width: 300px;
-    }
-    #output, #formTransaksi, #infoToko, #initToko, #redeemBox {
-      margin-top: 20px;
-      padding: 15px;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-    }
-    #formTransaksi, #infoToko, #mainInterface, #redeemBox {
-      display: none;
+    body { font-family: Arial; padding: 20px; }
+    button { margin: 5px; padding: 10px 20px; }
+    .hidden { display: none; }
+    .popup {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #eee;
+      padding: 15px 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 10;
     }
   </style>
 </head>
 <body>
+  <h2>Simulasi E-Money NFC</h2>
 
-  <h2>Ink Pay</h2>
-
-  <!-- FORM INPUT TOKO -->
-  <div id="initToko">
-    <p>Masukkan nama toko kamu:</p>
-    <input type="text" id="namaTokoInput" placeholder="Contoh: Kopi Biru">
-    <br>
-    <button id="masukBtn">Masuk</button>
+  <div id="namaTokoContainer">
+    <label>Masukkan Nama Toko: </label>
+    <input type="text" id="namaTokoInput" />
+    <button onclick="simpanNamaToko()">Masuk</button>
   </div>
 
-  <!-- MENU UTAMA -->
-  <div id="mainInterface">
-    <button id="cekSaldoBtn">Cek Saldo</button><br>
-    <button id="transaksiBtn">Transaksi</button><br>
-    <button id="infoBtn">Informasi Toko</button>
-  </div>
+  <div id="app" class="hidden">
+    <button onclick="checkSaldo()">Check Saldo</button>
+    <div id="saldoDisplay"></div>
 
-  <!-- OUTPUT -->
-  <div id="output">Silakan tempelkan kartu NFC.</div>
+    <button onclick="bukaTransaksi()">Transaksi</button>
+    <div id="transaksiForm" class="hidden">
+      <input id="hargaInput" placeholder="Masukkan harga" oninput="formatHarga(this)" />
+      <button onclick="prosesTransaksi()">Proses</button>
+    </div>
 
-  <!-- FORM TRANSAKSI -->
-  <div id="formTransaksi">
-    <p>Masukkan harga transaksi:</p>
-    <input type="number" id="hargaInput" placeholder="Contoh: 10000" min="1">
-    <br>
-    <button id="prosesBtn">Proses Transaksi</button>
-  </div>
-
-  <!-- INFORMASI TOKO -->
-  <div id="infoToko">
-    <p><strong>Nama Toko:</strong> <span id="namaTokoLabel"></span></p>
-    <p><strong>Saldo Toko:</strong> Rp<span id="saldoTokoLabel"></span></p>
-    <button id="redeemBtn">Redeem</button>
-
-    <div id="redeemBox">
-      <p><strong>Konfirmasi Admin:</strong><br>
-      <small>Hanya bisa diisi oleh admin</small></p>
-      <input type="password" id="adminPass" placeholder="Password admin">
-      <br>
-      <button id="confirmRedeemBtn">Konfirmasi Redeem</button>
+    <button onclick="tampilInfo()">Informasi Toko</button>
+    <div id="infoToko" class="hidden">
+      <p id="namaTokoText"></p>
+      <p id="saldoTokoText"></p>
+      <button onclick="bukaRedeem()">Redeem</button>
+      <div id="redeemForm" class="hidden">
+        <input type="password" placeholder="Password admin" id="redeemPass" />
+        <button onclick="prosesRedeem()">Konfirmasi</button>
+        <p><i>Ini hanya bisa diisi oleh admin</i></p>
+      </div>
     </div>
   </div>
 
+  <div id="popupMessage" class="popup hidden"></div>
+
   <script>
-    let currentData = null;
-    let namaToko = "";
+    let saldoKartu = 500000;
     let saldoToko = 0;
-    const ADMIN_PASSWORD = "admin123";
+    let namaToko = '';
 
-    const output = document.getElementById("output");
-    const formTransaksi = document.getElementById("formTransaksi");
-    const hargaInput = document.getElementById("hargaInput");
-    const infoTokoDiv = document.getElementById("infoToko");
-    const redeemBox = document.getElementById("redeemBox");
+    const popup = document.getElementById('popupMessage');
 
-    function resetToMenu() {
-      document.getElementById("mainInterface").style.display = "block";
-      formTransaksi.style.display = "none";
-      infoTokoDiv.style.display = "none";
+    function showPopup(msg) {
+      popup.innerText = msg;
+      popup.classList.remove('hidden');
+      setTimeout(() => {
+        popup.classList.add('hidden');
+      }, 2000);
     }
 
-    document.getElementById("masukBtn").addEventListener("click", () => {
-      const input = document.getElementById("namaTokoInput").value.trim();
-      if (!input) {
-        alert("Nama toko wajib diisi.");
-        return;
-      }
-      namaToko = input;
-      document.getElementById("initToko").style.display = "none";
-      document.getElementById("mainInterface").style.display = "block";
-      output.innerText = "Selamat datang di eMoney Seller.";
-    });
-
-    async function scanNFC(callback) {
-      try {
-        const ndef = new NDEFReader();
-        await ndef.scan();
-        output.innerText = "Tempelkan kartu NFC...";
-
-        ndef.onreading = event => {
-          const decoder = new TextDecoder();
-          for (const record of event.message.records) {
-            const text = decoder.decode(record.data);
-            try {
-              currentData = JSON.parse(text);
-              callback(currentData);
-            } catch {
-              output.innerText = "Data tidak valid.";
-            }
-          }
-        };
-      } catch (err) {
-        output.innerText = "⚠️ NFC Error: " + err;
-      }
+    function simpanNamaToko() {
+      namaToko = document.getElementById('namaTokoInput').value;
+      if (namaToko.trim() === '') return alert('Masukkan nama toko');
+      document.getElementById('namaTokoContainer').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
     }
 
-    async function writeToNFC(data, afterWriteCallback) {
-      try {
-        const ndef = new NDEFReader();
-        await ndef.write(JSON.stringify(data));
-        afterWriteCallback();
-      } catch (err) {
-        output.innerText = "Gagal menulis ke kartu: " + err;
-      }
+    function formatRupiah(angka) {
+      return angka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     }
 
-    document.getElementById("cekSaldoBtn").addEventListener("click", () => {
-      resetToMenu();
-      scanNFC(data => {
-        output.innerHTML = `
-          Nama: <strong>${data.name}</strong><br>
-          Saldo: <strong>Rp${data.balance.toLocaleString()}</strong>
-        `;
-      });
-    });
+    function formatHarga(el) {
+      let angka = el.value.replace(/\D/g, '');
+      el.value = formatRupiah(angka);
+    }
 
-    document.getElementById("transaksiBtn").addEventListener("click", () => {
-      formTransaksi.style.display = "block";
-      infoTokoDiv.style.display = "none";
-      output.innerText = "Masukkan harga, lalu tekan Proses.";
-    });
+    function checkSaldo() {
+      tutupSemuaForm();
+      showPopup(`Saldo kartu: Rp ${formatRupiah(saldoKartu)}`);
+    }
 
-    document.getElementById("prosesBtn").addEventListener("click", () => {
-      const harga = parseInt(hargaInput.value);
+    function bukaTransaksi() {
+      tutupSemuaForm();
+      document.getElementById('transaksiForm').classList.remove('hidden');
+    }
+
+    function prosesTransaksi() {
+      const input = document.getElementById('hargaInput').value.replace(/\./g, '');
+      const harga = parseInt(input);
+
       if (isNaN(harga) || harga <= 0) {
-        alert("Masukkan harga yang valid.");
+        showPopup("Harga tidak valid");
         return;
       }
 
-      output.innerText = "Tempelkan kartu pembeli...";
-      scanNFC(data => {
-        if (data.balance < harga) {
-          alert("❌ Saldo tidak cukup!");
-          setTimeout(() => {
-            output.innerText = "Transaksi gagal. Kembali ke menu.";
-            resetToMenu();
-          }, 2000);
-          return;
-        }
-
-        data.balance -= harga;
-        writeToNFC(data, () => {
-          saldoToko += harga;
-          alert("✅ Transaksi berhasil!");
-          setTimeout(() => {
-            output.innerText = "Transaksi selesai.";
-            hargaInput.value = "";
-            resetToMenu();
-          }, 2000);
-        });
-      });
-    });
-
-    document.getElementById("infoBtn").addEventListener("click", () => {
-      infoTokoDiv.style.display = "block";
-      formTransaksi.style.display = "none";
-      document.getElementById("namaTokoLabel").innerText = namaToko;
-      document.getElementById("saldoTokoLabel").innerText = saldoToko.toLocaleString();
-      redeemBox.style.display = "none";
-    });
-
-    document.getElementById("redeemBtn").addEventListener("click", () => {
-      redeemBox.style.display = "block";
-    });
-
-    document.getElementById("confirmRedeemBtn").addEventListener("click", () => {
-      const pass = document.getElementById("adminPass").value.trim();
-      if (pass !== ADMIN_PASSWORD) {
-        alert("❌ Password salah!");
-        return;
+      if (saldoKartu >= harga) {
+        saldoKartu -= harga;
+        saldoToko += harga;
+        showPopup("Transaksi berhasil");
+      } else {
+        showPopup("Saldo tidak cukup");
       }
-      saldoToko = 0;
-      alert("✅ Saldo toko telah di-redeem.");
-      document.getElementById("saldoTokoLabel").innerText = "0";
-      redeemBox.style.display = "none";
-    });
+
+      setTimeout(() => {
+        document.getElementById('transaksiForm').classList.add('hidden');
+        document.getElementById('hargaInput').value = '';
+      }, 2000);
+    }
+
+    function tampilInfo() {
+      tutupSemuaForm();
+      document.getElementById('infoToko').classList.remove('hidden');
+      document.getElementById('namaTokoText').innerText = `Nama Toko: ${namaToko}`;
+      document.getElementById('saldoTokoText').innerText = `Saldo Toko: Rp ${formatRupiah(saldoToko)}`;
+    }
+
+    function bukaRedeem() {
+      document.getElementById('redeemForm').classList.remove('hidden');
+    }
+
+    function prosesRedeem() {
+      const pass = document.getElementById('redeemPass').value;
+      if (pass === 'admin123') {
+        saldoToko = 0;
+        tampilInfo();
+        showPopup("Redeem berhasil");
+      } else {
+        showPopup("Password salah");
+      }
+    }
+
+    function tutupSemuaForm() {
+      document.getElementById('transaksiForm').classList.add('hidden');
+      document.getElementById('infoToko').classList.add('hidden');
+      document.getElementById('redeemForm').classList.add('hidden');
+    }
   </script>
-
 </body>
 </html>
